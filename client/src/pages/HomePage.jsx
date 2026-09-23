@@ -70,7 +70,7 @@ const HomePage = () => {
   const [stage, setStage] = useState('applications');
   useEffect(() => {
     const token = localStorage.getItem('token');
-    axios.get('http://localhost:5001/api/selection/stage', { headers: { 'x-auth-token': token } })
+    axios.get('/api/selection/stage', { headers: { 'x-auth-token': token } })
       .then((response) => setStage(response.data.stage))
       .catch(() => {});
   }, []);

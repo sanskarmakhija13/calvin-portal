@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const express = require('express');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
@@ -12,6 +14,7 @@ process.env.NODE_ENV = 'test';
 const databaseName = `calvin_prd_smoke_${process.pid}`;
 const databaseUrl = `mongodb://127.0.0.1:27017/${databaseName}`;
 let server;
+let smokeCvFilePath;
 
 async function main() {
   assert.match(databaseName, /^calvin_prd_smoke_\d+$/);
@@ -43,7 +46,12 @@ async function main() {
   assert.equal(response.data.previewRolesEnabled, false);
 
   const cvId = new mongoose.Types.ObjectId();
-  student.cvs.push({ _id: cvId, filename: 'smoke-cv.pdf', storedFilename: 'smoke-cv.pdf', mimeType: 'application/pdf', size: 12, hash: 'smoke-cv-hash' });
+  const smokeCvName = `smoke-cv-${process.pid}.pdf`;
+  const smokeCvFolder = path.join(__dirname, 'uploads', 'cvs', String(student._id));
+  smokeCvFilePath = path.join(smokeCvFolder, smokeCvName);
+  fs.mkdirSync(smokeCvFolder, { recursive: true });
+  fs.writeFileSync(smokeCvFilePath, Buffer.from('%PDF-1.4\nCalvin smoke CV\n'));
+  student.cvs.push({ _id: cvId, filename: 'smoke-cv.pdf', storedFilename: path.join(String(student._id), smokeCvName), mimeType: 'application/pdf', size: 12, hash: 'smoke-cv-hash' });
   student.applicationCVs.push({ cca: cca._id, cv: cvId });
   student.selectionApplications[0].cv = cvId;
   await student.save();
@@ -84,6 +92,16 @@ async function main() {
   const cvReviewState = await request(member, 'GET', `/api/selection?previewRole=cca&ccaId=${cca._id}`);
   assert.equal(cvReviewState.status, 200);
   assert.equal(cvReviewState.data.applications[0].cvId, String(cvId));
+  const cvDownload = await fetch(`${base}/api/selection/cv/${cca._id}/${student._id}/${cvId}?previewRole=cca`, { headers: { 'x-auth-token': tokenFor(member) } });
+  assert.equal(cvDownload.status, 200);
+  assert.match(cvDownload.headers.get('content-type') || '', /application\/pdf/);
+  assert.match(Buffer.from(await cvDownload.arrayBuffer()).toString(), /Calvin smoke CV/);
+  const applicationExport = await fetch(`${base}/api/selection/export/${cca._id}?previewRole=cca`, { headers: { 'x-auth-token': tokenFor(member) } });
+  assert.equal(applicationExport.status, 200, await applicationExport.clone().text());
+  assert.match(applicationExport.headers.get('content-type') || '', /application\/zip/);
+  const exportBytes = Buffer.from(await applicationExport.arrayBuffer());
+  assert.equal(exportBytes.subarray(0, 2).toString(), 'PK');
+  assert.ok(exportBytes.includes(Buffer.from('CVs/student_smoke-smoke-cv.pdf')));
   response = await action(member, 'cca', 'setCCAStatus', { ccaId: String(cca._id), status: 'Locked' });
   assert.equal(response.status, 200, JSON.stringify(response.data));
   const roundOneOpen = await CCA.findById(cca._id);
@@ -126,10 +144,14 @@ async function main() {
   response = await request(student, 'GET', '/api/selection?previewRole=admin');
   assert.equal(response.data.role, 'student');
   process.env.NODE_ENV = 'test';
-  console.log('PRD smoke test passed: roles, admin access, CV preservation, non-eliminative Round 0 CV review, Round 1 transition, configuration, panel assignment, submission, locked scores, round completion, and ratification.');
+  console.log('PRD smoke test passed: roles, admin access, CV preservation and export, non-eliminative Round 0 application review, Round 1 transition, configuration, panel assignment, submission, locked scores, round completion, and ratification.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
+  if (smokeCvFilePath) {
+    try { fs.unlinkSync(smokeCvFilePath); } catch { /* The smoke test may have failed before the file was created. */ }
+    try { fs.rmdirSync(path.dirname(smokeCvFilePath)); } catch { /* Keep the user CV folder if it contains other files. */ }
+  }
   if (server) await new Promise((resolve) => server.close(resolve));
   if (mongoose.connection.readyState === 1 && mongoose.connection.name === databaseName) await mongoose.connection.dropDatabase();
   await mongoose.disconnect();

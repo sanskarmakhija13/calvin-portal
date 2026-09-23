@@ -17,7 +17,7 @@ const CVApplicationDialog = ({ open, cca, isApplied, onClose, onConfirm, onRemov
       setError('');
       try {
         const token = localStorage.getItem('token');
-        const response = await axios.get('http://localhost:5001/api/user/cvs', { headers: { 'x-auth-token': token } });
+        const response = await axios.get('/api/user/cvs', { headers: { 'x-auth-token': token } });
         setCvs(response.data);
         setSelectedCvId(cca?.applicationCvId || response.data[0]?.id || '');
       } catch {
@@ -32,7 +32,7 @@ const CVApplicationDialog = ({ open, cca, isApplied, onClose, onConfirm, onRemov
     const formData = new FormData();
     formData.append('file', file);
     const token = localStorage.getItem('token');
-    const response = await axios.post('http://localhost:5001/api/user/cvs', formData, { headers: { 'x-auth-token': token } });
+    const response = await axios.post('/api/user/cvs', formData, { headers: { 'x-auth-token': token } });
     setCvs((current) => [...current, response.data]);
     setFile(null);
     setSelectedCvId(response.data.id);
@@ -61,7 +61,7 @@ const CVApplicationDialog = ({ open, cca, isApplied, onClose, onConfirm, onRemov
   const handleDeleteCV = async (cvId) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5001/api/user/cvs/${cvId}`, { headers: { 'x-auth-token': token } });
+      await axios.delete(`/api/user/cvs/${cvId}`, { headers: { 'x-auth-token': token } });
       const next = cvs.filter((cv) => cv.id !== cvId);
       setCvs(next);
       if (selectedCvId === cvId) setSelectedCvId(next[0]?.id || '');

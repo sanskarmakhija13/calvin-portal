@@ -14,7 +14,7 @@ const MainLayout = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    axios.get('http://localhost:5001/api/user/me', {
+    axios.get('/api/user/me', {
       headers: { 'x-auth-token': token },
     }).then((res) => {
       setEmail(res.data.email);

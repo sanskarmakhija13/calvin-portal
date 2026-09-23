@@ -323,13 +323,13 @@ router.get('/export/:ccaId', auth, async (req, res) => {
     const userById = new Map(users.map((entry) => [entry._id.toString(), entry]));
     const safeName = access.cca.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'cca';
     res.attachment(`${safeName}-applications.zip`);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = new archiver.ZipArchive({ zlib: { level: 9 } });
     archive.on('error', (error) => { if (!res.headersSent) res.status(500).json({ msg: 'Could not create the application export.' }); else res.end(); });
     archive.pipe(res);
     const csvEscape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const csv = [
-      ['Student', 'Email', 'Roll number', 'CCA', 'Vertical', 'Status', 'CV filename'].map(csvEscape).join(','),
-      ...applications.map((application) => [application.studentName, application.email, application.rollNumber, access.cca.name, application.vertical, application.status, application.cvFilename || 'Not attached'].map(csvEscape).join(','))
+      ['Student', 'Email', 'Roll number', 'Vertical', 'CV filename'].map(csvEscape).join(','),
+      ...applications.map((application) => [application.studentName, application.email, application.rollNumber, application.vertical, application.cvFilename || 'Not attached'].map(csvEscape).join(','))
     ].join('\n');
     archive.append(csv, { name: 'applications.csv' });
     for (const application of applications) {
@@ -351,11 +351,11 @@ router.get('/results-export', auth, async (req, res) => {
     const [workspace, ccas, users] = await Promise.all([workspaceFor(), CCA.find(), User.find({ appliedCCAs: { $exists: true, $ne: [] } })]);
     const ccaById = new Map(ccas.map((cca) => [String(cca._id), cca]));
     const quote = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = [['Student', 'Email', 'Roll number', 'CCA', 'Vertical', 'Preference', 'Status', 'Weighted total']];
+    const rows = [['Student', 'Email', 'Roll number', 'Vertical', 'Preference', 'Weighted total']];
     for (const user of users) for (const application of user.selectionApplications || []) {
       const cca = ccaById.get(String(application.cca));
       if (!cca) continue;
-      rows.push([user.fullName || user.email.split('@')[0], user.email, user.rollNumber, cca.name, application.vertical, application.preference, application.status, cca.resultsPublished ? scoreFor(workspace, cca, String(user._id)).toFixed(2) : 'Pending ratification']);
+      rows.push([user.fullName || user.email.split('@')[0], user.email, user.rollNumber, application.vertical, application.preference, cca.resultsPublished ? scoreFor(workspace, cca, String(user._id)).toFixed(2) : 'Pending ratification']);
     }
     res.type('text/csv').attachment('calvin-selection-results.csv').send(rows.map((row) => row.map(quote).join(',')).join('\r\n'));
   } catch (error) { res.status(error.status || 500).json({ msg: error.message || 'Could not export results.' }); }

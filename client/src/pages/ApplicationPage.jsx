@@ -28,9 +28,9 @@ const ApplicationPage = () => {
 
       try {
         const [ccasRes, userAppsRes, stageRes] = await Promise.all([
-          axios.get(`http://localhost:5001/api/ccas?phase=${OVERTURES_PHASE}`),
-          axios.get('http://localhost:5001/api/user/applications', config),
-          axios.get('http://localhost:5001/api/selection/stage', config)
+          axios.get(`/api/ccas?phase=${OVERTURES_PHASE}`),
+          axios.get('/api/user/applications', config),
+          axios.get('/api/selection/stage', config)
         ]);
 
         setAllCCAs(ccasRes.data);
@@ -82,7 +82,7 @@ const ApplicationPage = () => {
       const config = { headers: { 'x-auth-token': token } };
       const ccaIds = Array.from(selectedCCAIds);
       const applicationCVsPayload = ccaIds.filter((ccaId) => applicationCVs.has(ccaId)).map((ccaId) => ({ ccaId, cvId: applicationCVs.get(ccaId) }));
-      await axios.post('http://localhost:5001/api/user/applications', { ccaIds, applicationCVs: applicationCVsPayload }, config);
+      await axios.post('/api/user/applications', { ccaIds, applicationCVs: applicationCVsPayload }, config);
       alert('Your selections have been saved!');
     } catch {
       alert('Failed to save selections.');
@@ -92,7 +92,7 @@ const ApplicationPage = () => {
   const handleClearAll = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/user/applications', { ccaIds: [], applicationCVs: [] }, { headers: { 'x-auth-token': token } });
+      await axios.post('/api/user/applications', { ccaIds: [], applicationCVs: [] }, { headers: { 'x-auth-token': token } });
       setSelectedCCAIds(new Set());
       setApplicationCVs(new Map());
       setClearDialogOpen(false);

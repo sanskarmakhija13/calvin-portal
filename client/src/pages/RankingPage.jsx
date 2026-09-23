@@ -20,8 +20,8 @@ const RankingPage = () => {
       const token = localStorage.getItem('token');
       try {
         const [applicationsResponse, stageResponse] = await Promise.all([
-          axios.get('http://localhost:5001/api/user/applications', { headers: { 'x-auth-token': token } }),
-          axios.get('http://localhost:5001/api/selection/stage', { headers: { 'x-auth-token': token } })
+          axios.get('/api/user/applications', { headers: { 'x-auth-token': token } }),
+          axios.get('/api/selection/stage', { headers: { 'x-auth-token': token } })
         ]);
         setRankedCCAs(applicationsResponse.data);
         setPortalStage(stageResponse.data.stage);
@@ -58,7 +58,7 @@ const RankingPage = () => {
   const handleSaveRanks = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5001/api/user/rankings', { rankedCcaIds: rankedCCAs.map((cca) => cca._id) }, { headers: { 'x-auth-token': token } });
+      await axios.post('/api/user/rankings', { rankedCcaIds: rankedCCAs.map((cca) => cca._id) }, { headers: { 'x-auth-token': token } });
       alert('Your ranking has been saved!');
       navigate('/home');
     } catch {
