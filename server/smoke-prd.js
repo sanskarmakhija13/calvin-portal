@@ -55,10 +55,15 @@ async function main() {
 
   response = await action(admin, 'admin', 'setPortalStage', { stage: 'configuration' });
   assert.equal(response.status, 200, JSON.stringify(response.data));
-  response = await action(member, 'cca', 'configureCCA', { ccaId: String(cca._id), seats: 1, constitutionalStrength: 1, verticals: [{ name: 'General', seats: 1 }], rounds: [{ name: 'Task round', type: 'Individual · Task', maxMarks: 20, weight: 20, eliminate: 0, instructions: 'Submit a task', criteria: 'Quality' }] });
+  response = await action(member, 'cca', 'configureCCA', { ccaId: String(cca._id), seats: 1, constitutionalStrength: 1, verticals: [{ name: 'General', seats: 1 }], rounds: [{ name: 'Task round', type: 'Individual · Task', maxMarks: 20, weight: 20, eliminate: 1, instructions: 'Submit a task', criteria: 'Quality' }] });
   assert.equal(response.status, 200, JSON.stringify(response.data));
   const configured = await CCA.findById(cca._id);
-  const roundId = String(configured.rounds[0]._id);
+  const cvReviewRound = configured.rounds[0];
+  assert.equal(cvReviewRound.name, 'CV review');
+  assert.equal(cvReviewRound.maxMarks, 0);
+  assert.equal(cvReviewRound.eliminate, 0);
+  const cvReviewRoundId = String(cvReviewRound._id);
+  const roundId = String(configured.rounds[1]._id);
   response = await action(member, 'cca', 'createPanel', { ccaId: String(cca._id), roundId, name: 'Panel A', members: [member.email] });
   assert.equal(response.status, 200, JSON.stringify(response.data));
   const workspace = await SelectionWorkspace.findOne({ key: 'default' });
@@ -69,8 +74,23 @@ async function main() {
   assert.equal(response.status, 200, JSON.stringify(response.data));
   response = await action(admin, 'admin', 'setPortalStage', { stage: 'selection' });
   assert.equal(response.status, 200, JSON.stringify(response.data));
+  const roundZeroOpen = await CCA.findById(cca._id);
+  assert.equal(roundZeroOpen.currentRound, 0);
+  assert.equal(roundZeroOpen.rounds[0].status, 'Active');
+  assert.equal((await User.findById(student._id)).selectionApplications[0].status, 'Applied');
+  response = await action(member, 'cca', 'lockEvaluation', { ccaId: String(cca._id), roundId: cvReviewRoundId, panelId, entries: [{ userId: String(student._id), total: 0 }] });
+  assert.equal(response.status, 400);
+  assert.match(response.data.msg, /CV review only/);
+  const cvReviewState = await request(member, 'GET', `/api/selection?previewRole=cca&ccaId=${cca._id}`);
+  assert.equal(cvReviewState.status, 200);
+  assert.equal(cvReviewState.data.applications[0].cvId, String(cvId));
   response = await action(member, 'cca', 'setCCAStatus', { ccaId: String(cca._id), status: 'Locked' });
   assert.equal(response.status, 200, JSON.stringify(response.data));
+  const roundOneOpen = await CCA.findById(cca._id);
+  assert.equal(roundOneOpen.currentRound, 1);
+  assert.equal(roundOneOpen.rounds[0].status, 'Completed');
+  assert.equal(roundOneOpen.rounds[1].status, 'Active');
+  assert.equal((await User.findById(student._id)).selectionApplications[0].status, 'Applied');
   response = await action(student, 'student', 'submitTask', { ccaId: String(cca._id), roundId, name: 'Task', url: 'https://example.com/task' });
   assert.equal(response.status, 200, JSON.stringify(response.data));
   response = await action(student, 'student', 'lockEvaluation', { ccaId: String(cca._id), roundId, panelId, entries: [{ userId: String(student._id), total: 19 }] });
@@ -106,7 +126,7 @@ async function main() {
   response = await request(student, 'GET', '/api/selection?previewRole=admin');
   assert.equal(response.data.role, 'student');
   process.env.NODE_ENV = 'test';
-  console.log('PRD smoke test passed: roles, admin access, CV preservation, configuration, panel assignment, submission, locked scores, round completion, and ratification.');
+  console.log('PRD smoke test passed: roles, admin access, CV preservation, non-eliminative Round 0 CV review, Round 1 transition, configuration, panel assignment, submission, locked scores, round completion, and ratification.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
