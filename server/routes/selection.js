@@ -476,6 +476,58 @@ router.post('/action', auth, async (req, res) => {
       if (workspace.stage === 'selection' && tieBreaker !== (workspace.policy?.tieBreaker || 'finalRound')) fail('Tie-break rules cannot change after selection starts.', 409);
       workspace.policy = { multiplier, decimals: Boolean(payload.decimals), tieBreaker, version: Number(workspace.policy?.version || 0) + 1 };
       addAudit(workspace, actor, role, 'Policy updated', 'selection-policy', workspace.policy);
+    } else if (action === 'updateScoredRounds') {
+      requireRole('cca');
+      requireStage('configuration', 'selection');
+      requireCCAAccess();
+      if (cca.resultsPublished || !['Draft', 'Finalized', 'Locked'].includes(cca.selectionStatus)) fail('Rounds can no longer be edited for this CCA.', 409);
+      const existingRounds = cca.rounds.filter((round) => !isCVReview(round));
+      const protectedRounds = existingRounds.filter((round) => round.status !== 'Draft');
+      const submittedRounds = Array.isArray(payload.rounds) ? payload.rounds : [];
+      if (!submittedRounds.length) fail('Keep at least one scored round.');
+      const submittedProtectedIds = submittedRounds.slice(0, protectedRounds.length).map((round) => String(round._id || ''));
+      if (submittedProtectedIds.length !== protectedRounds.length || protectedRounds.some((round, index) => String(round._id) !== submittedProtectedIds[index])) {
+        fail('Started rounds cannot be removed or reordered. Keep them first and change only future rounds.', 409);
+      }
+      const protectedIds = new Set(protectedRounds.map((round) => String(round._id)));
+      if (submittedRounds.slice(protectedRounds.length).some((round) => protectedIds.has(String(round._id || '')))) fail('A started round cannot be duplicated or moved.', 409);
+      const normalizedRounds = submittedRounds.map((round, index) => {
+        if (index < protectedRounds.length) {
+          const protectedRound = protectedRounds[index];
+          const isCurrentActiveRound = protectedRound.status === 'Active' && String(cca.rounds[cca.currentRound]?._id) === String(protectedRound._id);
+          const hasLockedMarks = workspace.evaluations.some((evaluation) => evaluation.roundId === String(protectedRound._id));
+          if (isCurrentActiveRound && !hasLockedMarks) protectedRound.criteria = String(round.criteria ?? protectedRound.criteria ?? '');
+          return protectedRound;
+        }
+        const prior = existingRounds.find((item) => String(item._id) === String(round._id || ''));
+        const next = {
+          name: String(round.name || '').trim(), type: round.type || 'Individual · Task', maxMarks: Number(round.maxMarks),
+          taskMaxMarks: Number(round.taskMaxMarks ?? (isTask(round) && !isInterview(round) ? round.maxMarks : 0)),
+          interviewMaxMarks: Number(round.interviewMaxMarks ?? (isInterview(round) && !isTask(round) ? round.maxMarks : 0)),
+          weight: Number(round.weight), eliminate: Number(round.eliminate || 0), deadline: round.deadline || null,
+          instructions: String(round.instructions || ''), criteria: String(round.criteria || ''), status: 'Draft',
+          policyVersion: workspace.policy.version, poolMultiplier: workspace.policy.multiplier
+        };
+        if (!next.name || !Number.isFinite(next.maxMarks) || next.maxMarks <= 0 || !Number.isFinite(next.weight) || next.weight <= 0 || !Number.isInteger(next.eliminate) || next.eliminate < 0 || (next.deadline && Number.isNaN(Date.parse(next.deadline)))) fail('Each round needs a name, positive maximum marks and weight, a valid elimination count, and a valid deadline.');
+        if (!roundTypes.has(next.type)) fail('Choose a supported scored-round type.');
+        if (isTask(next) && isInterview(next) && (next.taskMaxMarks <= 0 || next.interviewMaxMarks <= 0 || next.taskMaxMarks + next.interviewMaxMarks !== next.maxMarks)) fail('Task and interview maximum marks must add up to the round maximum.');
+        next._id = prior?._id || new mongoose.Types.ObjectId();
+        return next;
+      });
+      if (new Set(normalizedRounds.map((round) => round.name.toLowerCase())).size !== normalizedRounds.length) fail('Round names must be unique.');
+      if (!protectedRounds.length && normalizedRounds[0].eliminate < 1) fail('Round 1 must eliminate at least one applicant.');
+      const retainedIds = new Set(normalizedRounds.map((round) => String(round._id)));
+      const removedIds = new Set(existingRounds.filter((round) => !retainedIds.has(String(round._id))).map((round) => String(round._id)));
+      if (removedIds.size) {
+        const removedPanelIds = new Set(workspace.panels.filter((panel) => panel.ccaId === String(cca._id) && removedIds.has(panel.roundId)).map((panel) => panel.id));
+        workspace.panels = workspace.panels.filter((panel) => !removedPanelIds.has(panel.id));
+        workspace.sessions = workspace.sessions.filter((session) => !removedPanelIds.has(session.panelId) && !removedIds.has(session.roundId));
+        workspace.groups = workspace.groups.filter((group) => group.ccaId !== String(cca._id) || !removedIds.has(group.roundId));
+      }
+      const reviewRound = cca.rounds.find(isCVReview) || makeCVReviewRound();
+      cca.rounds = [reviewRound, ...normalizedRounds];
+      await cca.save();
+      addAudit(workspace, actor, role, 'CCA rounds updated', cca.name, { rounds: normalizedRounds.length });
     } else if (action === 'configureCCA') {
       requireRole('cca');
       requireStage('configuration');
