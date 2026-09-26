@@ -18,6 +18,7 @@ const SelectionWorkspaceSchema = new mongoose.Schema({
     version: { type: Number, default: 1 }
   },
   panels: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  panelRuns: { type: [mongoose.Schema.Types.Mixed], default: [] },
   sessions: { type: [mongoose.Schema.Types.Mixed], default: [] },
   submissions: { type: [mongoose.Schema.Types.Mixed], default: [] },
   groups: { type: [mongoose.Schema.Types.Mixed], default: [] },
